@@ -1,0 +1,261 @@
+
+/**************************************************************************
+% Fuzzy Random Impulse Noise Reduction Method  (Denoising Method)
+%
+%  The FRINR method was proposed in: 
+%
+%  Stefan Schulte, Valérie De Witte, Mike Nachtegael, 
+%  Dietrich Van der Weken and  Etienne E. Kerre 
+%  Fuzzy Sets and Systems 158(3), 2007 pp. 270-283  
+%
+% Stefan Schulte (stefan.schulte@Ugent.be):
+% Last modified: 15/01/06
+%**************************************************************************/
+
+#include "mex.h"
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+/**
+*  Membership functions 
+**/
+double FuzzySet (double x, double cen, double d) {
+   double res = 0.0;
+   if( (x >= (cen-d)) && (x <= (cen+d)))
+      res = 1.0 ;
+   else if ( (x < (cen-d)) && (x>=(cen-d-d*0.1)))
+      res = (x-(cen-d-d*0.1))/(d*0.1);
+   else if ((x > (cen+d)) && (x <= (cen+d+d*0.1)))
+      res = ((cen+d+d*0.1)-x)/(d*0.1);
+   else 
+  	  res = 0.0;
+   return res;
+}
+
+
+double absol(double a) {
+   double b;
+   if(a<0)   b=-a;
+   else   b=a;
+   return b;
+}
+
+/************************************************************************
+*  The main function
+************************************************************************/
+
+void callDenoise(double **A1,double **M1,double **M2,double *out,int M, int N,int W, int W2) { 
+   int i,j,k,l, loop;   
+   double *win;
+   double som, tel, a, b;
+   double p = 0, hlp, cen, res;
+
+   int rand1a = 0;
+   int rand1b = 0;
+   int rand2a = 0;
+   int rand2b = 0;
+               
+   int rand3a = 0;
+   int rand3b = 0;
+   int rand4a = 0;
+   int rand4b = 0;
+               
+   win = malloc((2*W+1)*(2*W+1)*sizeof(double));
+
+   for(i=0; i<M; i++){
+      for(j=0; j<N; j++){
+         /* step 1. Determine the local window*/      
+         if(i < W) {
+            rand1a = i;
+            rand1b = W;
+         }
+         else {
+              if (i>M-W-1){
+               rand1a = W;
+               rand1b = M-i-1;
+            }
+            else{
+               rand1a = W;
+               rand1b = W;
+            }
+         }
+
+         
+         if(j < W) {
+            rand2a = j;
+            rand2b = W;
+         }
+         else {
+            if (j > N-W-1){
+               rand2a = W;
+               rand2b = N-j-1;
+            }
+            else{
+               rand2a = W;
+               rand2b = W;
+            }
+         }
+         
+         if(i < W2) {
+            rand3a = i;
+            rand3b = W2;
+         }
+         else {
+              if (i>M-W2-1){
+               rand3a = W2;
+               rand3b = M-i-1;
+            }
+            else{
+               rand3a = W2;
+               rand3b = W2;
+            }
+         }
+
+         if(j < W2) {
+            rand4a = j;
+            rand4b = W2;
+         }
+         else {
+            if (j > N-W2-1){
+               rand4a = W2;
+               rand4b = N-j-1;
+            }
+            else{
+               rand4a = W2;
+               rand4b = W2;
+            }
+         }
+         /* end step 1. */      
+         
+         tel = 0.0;
+         if ((M1[i][j] > 0) && (M2[i][j] <= 1.0)){
+            for (k=i-rand1a; k<=i+rand1b; k++){
+	           for (l=j-rand2a; l<=j+rand2b; l++){
+	              cen = A1[k][l];
+	              for (loop = 0; loop<tel; loop++){
+	                 if (cen < win[loop]){
+	                    hlp = win[loop];
+	                    win[loop] = cen;
+	                    cen = hlp;
+	                 }
+	              }
+	              win[(int)tel] = cen;
+	              tel++;
+               }
+            }
+         
+            a = win[(int)((double)tel/2.0)];
+            som = 0.0;
+            for (loop=0; loop<8; loop++){
+               som += win[loop+1] - win[loop];
+            }
+            b = ceil(som/8.0);
+         
+            som = 0.0; res = 0.0;
+            for (k=i-rand3a; k<=i+rand3b; k++){
+	           for (l=j-rand4a; l<=j+rand4b; l++){
+	              hlp = FuzzySet(A1[k][l],a,b);
+	              som += hlp;
+                  res += hlp * A1[k][l];
+               }
+            }
+            
+            if(som!=0){ 
+               hlp = FuzzySet(A1[i][j],a,b);
+               out[i+j*M] = (res/som)*(1-hlp) + hlp*A1[i][j];
+            }
+            else out[i+j*M] = A1[i][j];
+         }
+         else out[i+j*M] = A1[i][j];
+      }
+   }
+   free(win); 
+} 
+
+#define Im1      prhs[0]
+#define Mem1     prhs[1]
+#define Mem2     prhs[2]
+#define WSIZE    prhs[3]
+#define WSIZE2   prhs[4]
+
+#define OUT plhs[0]
+
+
+
+/**
+*  The interaction with Matlab (mex):
+*        nlhs = amount of output arguments (= 1)
+*        nrhs = amount of input arguments (= 5)
+*     *plhs[] = link to the output 
+*     *prhs[] = link to the input 
+*
+**/
+void mexFunction( int nlhs, mxArray  *plhs[], int nrhs, const mxArray  *prhs[] ) {
+    int row, col, i, M, N, W, W2;
+    double **out, **A1, **M1, **M2;
+    
+    if (nlhs!=1)
+        mexErrMsgTxt("It requires three output arguments only [M1].");
+    if (nrhs!=5)
+       mexErrMsgTxt("this method requires 5 input argument [Im1 M1 M2 Wsize1 Wsize2]");
+
+    /* Get input values */  
+    M  = mxGetM(Im1);
+    N  = mxGetN(Im1);
+    W  = mxGetScalar(WSIZE);
+    W2 = mxGetScalar(WSIZE2);
+
+    /**
+    * Allocate memory for return matrices 
+    **/
+
+    OUT = mxCreateDoubleMatrix(M, N, mxREAL);  
+    out = mxGetPr(OUT);
+
+    /**
+    * Dynamic allocation of memory for the input array
+    **/
+    A1 = malloc(M*sizeof(int));
+    for(i=0;i<M;i++)
+      A1[i] = malloc(N*sizeof(double));
+
+    M1 = malloc(M*sizeof(int));
+    for(i=0;i<M;i++)
+      M1[i] = malloc(N*sizeof(double));
+
+    M2 = malloc(M*sizeof(double));
+    for(i=0;i<M;i++)
+      M2[i] = malloc(N*sizeof(double));
+
+     /**
+     * Convert ARRAY_IN and INPUT_MASK to 2x2 C arrays (MATLAB stores a two-dimensional matrix 
+     * in memory as a one-dimensional array) 
+     ***/
+     for (col=0; col < N; col++)
+         for (row=0; row < M; row++) {
+             A1[row][col] = (mxGetPr(Im1))[row+col*M];
+	      }
+	      
+     for (col=0; col < N; col++)
+         for (row=0; row < M; row++) {
+             M1[row][col] = (mxGetPr(Mem1))[row+col*M];
+	      }
+	      
+     for (col=0; col < N; col++)
+         for (row=0; row < M; row++) {
+             M2[row][col] = (mxGetPr(Mem2))[row+col*M];
+	      }
+	      
+    callDenoise(A1,M1,M2,out,M,N,W,W2);
+
+    for(i=0;i<M;i++)  free(A1[i]);
+    free(A1); 
+    
+    for(i=0;i<M;i++)  free(M1[i]);
+    free(M1); 
+    
+    for(i=0;i<M;i++)  free(M2[i]);
+    free(M2); 
+}
+/* end mexFcn*/

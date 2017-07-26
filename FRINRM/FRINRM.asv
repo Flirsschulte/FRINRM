@@ -1,0 +1,86 @@
+
+%**************************************************************************
+% Fuzzy Random Impulse Noise Reduction Method 
+%
+%  The FRINR method was proposed in: 
+%
+%  Stefan Schulte, Bruno Huysmans, Aleksandra Pizurica, Etienne E. Kerre 
+%  and  Wilfried Philips: A New Fuzzy-based Wavelet Shrinkage Image Denoising Technique
+%  Lecture Notes in Computer Science conference 
+%  "Advanced Concepts for Intelligent Vision Systems" 
+%  Sept 18-21, 2006,  Antwerp, Belgium 
+%
+% Stefan Schulte (stefan.schulte@Ugent.be):
+% Last modified: 15/01/06
+%
+% Inputs:  A = the noisy input image
+%          W = the window-size
+%          We used the simple Daubechies db2 wavelet transform 
+% Outputs:  Out = the filtered image 
+%**************************************************************************
+
+
+function Fs = FRINRM(A,O)
+   [M,N,DIM] = size(A);
+   A = double(A);
+   if (DIM ~= 1)
+       if (sum(sum((A(:,:,1)-A(:,:,2)))) <= M) && (sum(sum((A(:,:,1)-A(:,:,3)))) <= M)
+          Fs = FRINRM_COL(A,O);
+       else 
+          A1 = A(:,:,1);
+          clear A;
+          A = A1;
+       end
+   end
+
+   [M2,N2,DIM2] = size(O);
+   if (DIM2 ~= 1)
+       O1 = O(:,:,1);
+       clear O;
+       O = O1;
+       clear O1;
+   end
+
+   clear O1;
+
+   F = double(A);
+   F2 = double(A);
+   
+   begin = 0;
+   loop = 1;
+   while (begin == 0)
+%      Fs(:,:,1) = F;
+%      Fs(:,:,2) = F;
+%      Fs(:,:,3) = F;
+      F = double(F2);
+   
+      mem1(M,N,DIM) = 0;
+      mem2(M,N,DIM) = 0;
+
+      % neighbourhood size 
+      WindowSize  = 1;
+      WindowSize2 = 2;
+   
+      mem1 = Detection1(F,WindowSize);
+      mem2 = Detection2(F,WindowSize);
+      F2 = Denoise(F,mem1,mem2,WindowSize,WindowSize2);
+
+%      Fs2(:,:,1) = F;
+%      Fs2(:,:,2) = F;
+%      Fs2(:,:,3) = F;
+      
+      if (MSEgray(F,O,3) < MSEgray(F2,O,3)) | (loop == 40)
+%      if (MSEgray(F,F2,3) < 0.1) | (loop == 5)
+          begin = 1;
+      end
+      
+      disp(sprintf('==> MSE %2d: %10.5f',loop,MSEgray(F2,O,3)));
+      loop = loop +1;
+   end
+   Fs(:,:,1) = F;
+   Fs(:,:,2) = F;
+   Fs(:,:,3) = F;
+   disp(sprintf('======================='));
+   disp(sprintf('Output MSE:  %10.5f',MSEgray(F,O,3)));
+   disp(sprintf('Output PSNR: %10.5f',(log(255^2/MSEgray(F,O,3))/log(10)*10)));
+   disp(sprintf('======================='));
